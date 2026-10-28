@@ -1,0 +1,840 @@
+--==============================================================
+-- MM2 | Auto Farm + Anti-AFK + Speed
+-- Script by therealturk3y
+--==============================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local LP = Players.LocalPlayer
+
+local LOBBY_NAME = "Lobby"
+local TOUCH_DIST = 2
+local WALK_SPEED = 25
+local PATROL_SPAN = 3 -- studs either side of the coin
+local PATROL_SWAP = 0.45 -- how often to turn around
+local GIVE_UP = 4 -- seconds on a coin before moving on
+local DONE_WAIT = 2.5 -- seconds of no coins before resetting
+
+local State = { AutoFarm = false, AntiAFK = false, Speed = 25, Hover = 0 }
+
+local Char, Hum, Root
+local noclipSaved = {}
+local flyingNow = false
+local touchMode = false
+
+local ACCENT = Color3.fromRGB(85, 205, 125)
+local OFFCOL = Color3.fromRGB(52, 55, 64)
+local PANEL_SIZE = UDim2.new(0, 220, 0, 220)
+local panelPos = UDim2.new(0, 24, 0, 90)
+
+--====================== INTRO / CREDIT ======================
+local function showIntro()
+local sg = Instance.new("ScreenGui")
+sg.Name = "MM2Intro"
+sg.ResetOnSpawn = false
+sg.IgnoreGuiInset = true
+sg.DisplayOrder = 100
+sg.Parent = LP:WaitForChild("PlayerGui")
+
+local bg = Instance.new("Frame")
+bg.Size = UDim2.new(1, 0, 1, 0)
+bg.BackgroundColor3 = Color3.fromRGB(11, 12, 15)
+bg.BackgroundTransparency = 1
+bg.BorderSizePixel = 0
+bg.Parent = sg
+
+local row = Instance.new("Frame")
+row.AnchorPoint = Vector2.new(0.5, 0.5)
+row.Position = UDim2.new(0.5, 0, 0.5, -10)
+row.Size = UDim2.new(0, 560, 0, 56)
+row.BackgroundTransparency = 1
+row.Parent = bg
+
+local layout = Instance.new("UIListLayout")
+layout.FillDirection = Enum.FillDirection.Horizontal
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.VerticalAlignment = Enum.VerticalAlignment.Center
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = row
+
+local word = "therealturk3y's"
+local letters = {}
+for i = 1, #word do
+local l = Instance.new("TextLabel")
+l.Size = UDim2.new(0, 30, 0, 44)
+l.BackgroundTransparency = 1
+l.Font = Enum.Font.GothamBlack
+l.Text = word:sub(i, i)
+l.TextSize = 40
+l.TextColor3 = ACCENT
+l.TextTransparency = 1
+l.Rotation = (i % 2 == 0) and 45 or -45
+l.LayoutOrder = i
+l.Parent = row
+letters[i] = l
+end
+
+local line = Instance.new("Frame")
+line.AnchorPoint = Vector2.new(0.5, 0.5)
+line.Position = UDim2.new(0.5, 0, 0.5, 26)
+line.Size = UDim2.new(0, 0, 0, 2)
+line.BackgroundColor3 = ACCENT
+line.BorderSizePixel = 0
+line.Parent = bg
+
+local sub = Instance.new("TextLabel")
+sub.AnchorPoint = Vector2.new(0.5, 0.5)
+sub.Position = UDim2.new(0.5, 0, 0.5, 48)
+sub.Size = UDim2.new(0, 460, 0, 20)
+sub.BackgroundTransparency = 1
+sub.Font = Enum.Font.GothamBold
+sub.Text = "M M 2 · A U T O F A R M"
+sub.TextSize = 12
+sub.TextColor3 = Color3.fromRGB(150, 158, 172)
+sub.TextTransparency = 1
+sub.Parent = bg
+
+TweenService:Create(bg, TweenInfo.new(0.45), { BackgroundTransparency = 0 }):Play()
+
+for i, l in ipairs(letters) do
+task.delay(0.35 + i * 0.055, function()
+TweenService:Create(l, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+TextTransparency = 0,
+Rotation = 0,
+}):Play()
+end)
+end
+
+task.delay(0.4, function()
+TweenService:Create(line, TweenInfo.new(0.85, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+Size = UDim2.new(0, 320, 0, 2),
+}):Play()
+end)
+
+task.delay(1.25, function()
+TweenService:Create(sub, TweenInfo.new(0.6), { TextTransparency = 0 }):Play()
+end)
+
+task.delay(1.55, function()
+for _, l in ipairs(letters) do
+TweenService:Create(l, TweenInfo.new(0.35), {
+TextColor3 = Color3.fromRGB(255, 255, 255),
+}):Play()
+end
+task.wait(0.35)
+for _, l in ipairs(letters) do
+TweenService:Create(l, TweenInfo.new(0.5), { TextColor3 = ACCENT }):Play()
+end
+end)
+
+task.delay(2.7, function()
+TweenService:Create(bg, TweenInfo.new(0.55), { BackgroundTransparency = 1 }):Play()
+TweenService:Create(sub, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
+TweenService:Create(line, TweenInfo.new(0.4), { BackgroundTransparency = 1 }):Play()
+for _, l in ipairs(letters) do
+TweenService:Create(l, TweenInfo.new(0.4), {
+TextTransparency = 1,
+Rotation = (math.random() > 0.5) and -25 or 25,
+}):Play()
+end
+task.wait(0.75)
+sg:Destroy()
+end)
+end
+
+showIntro()
+
+--====================== CHARACTER ==========================
+local function bind(char)
+Char = char
+Hum = char:WaitForChild("Humanoid")
+Root = char:WaitForChild("HumanoidRootPart")
+Hum.WalkSpeed = WALK_SPEED
+noclipSaved = {}
+flyingNow = false
+touchMode = false
+if State.AutoFarm then
+Hum.PlatformStand = true
+Root.Anchored = true
+flyingNow = true
+end
+end
+
+if LP.Character then bind(LP.Character) end
+LP.CharacterAdded:Connect(bind)
+
+--====================== COIN SCANNING ======================
+local function scan()
+local coins, hasContainer = {}, false
+for _, d in ipairs(Workspace:GetDescendants()) do
+if d.Name == "CoinContainer" then
+hasContainer = true
+elseif d:IsA("BasePart") and d.Name == "Coin_Server" then
+local p = d.Parent
+if p and p.Name == "CoinContainer" and d:FindFirstChild("TouchInterest") then
+coins[#coins + 1] = d
+end
+end
+end
+return coins, hasContainer
+end
+
+--======================== LOBBY CHECK ======================
+local lobbyModel, lobbyParts, lobbyScanAt = nil, {}, 0
+
+local function refreshLobby(force)
+if not force and os.clock() - lobbyScanAt < 2 then return end
+lobbyScanAt = os.clock()
+
+lobbyModel = Workspace:FindFirstChild(LOBBY_NAME)
+if not lobbyModel or not lobbyModel:IsA("Model") then
+lobbyModel = nil
+for _, d in ipairs(Workspace:GetDescendants()) do
+if d:IsA("Model") and d.Name == LOBBY_NAME then
+lobbyModel = d
+break
+end
+end
+end
+
+lobbyParts = {}
+if lobbyModel then
+for _, p in ipairs(lobbyModel:GetDescendants()) do
+if p:IsA("BasePart") then
+lobbyParts[#lobbyParts + 1] = p
+end
+end
+end
+end
+
+local function inLobby()
+if lobbyModel and not lobbyModel.Parent then
+refreshLobby(true)
+else
+refreshLobby(false)
+end
+if not lobbyModel or not Root then return false end
+
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Exclude
+params.FilterDescendantsInstances = { Char }
+params.IgnoreWater = true
+
+local hit = Workspace:Raycast(Root.Position, Vector3.new(0, -14, 0), params)
+if hit and hit.Instance then
+local a = hit.Instance
+while a and a ~= Workspace do
+if a == lobbyModel then return true end
+a = a.Parent
+end
+end
+
+local ok, cf, size = pcall(function() return lobbyModel:GetBoundingBox() end)
+if ok and cf and size then
+local lp = cf:PointToObjectSpace(Root.Position)
+if math.abs(lp.X) <= size.X / 2 + 4
+and math.abs(lp.Z) <= size.Z / 2 + 4
+and math.abs(lp.Y) <= size.Y / 2 + 8 then
+return true
+end
+end
+
+local pos = Root.Position
+for _, p in ipairs(lobbyParts) do
+local rel = p.CFrame:PointToObjectSpace(pos)
+local half = p.Size * 0.5
+local cl = Vector3.new(
+math.clamp(rel.X, -half.X, half.X),
+math.clamp(rel.Y, -half.Y, half.Y),
+math.clamp(rel.Z, -half.Z, half.Z)
+)
+if (p.CFrame:PointToWorldSpace(cl) - pos).Magnitude <= 4 then
+return true
+end
+end
+
+return false
+end
+
+--================= NOCLIP (always on) ======================
+local function applyNoclip(on)
+if not Char then return end
+if on then
+for _, p in ipairs(Char:GetDescendants()) do
+if p:IsA("BasePart") then
+if noclipSaved[p] == nil then
+noclipSaved[p] = p.CanCollide
+end
+p.CanCollide = false
+end
+end
+else
+for p, orig in pairs(noclipSaved) do
+if p and p.Parent then
+p.CanCollide = orig
+p.CanTouch = true
+end
+end
+noclipSaved = {}
+end
+end
+
+RunService.Stepped:Connect(function()
+if Hum and Hum.WalkSpeed ~= WALK_SPEED then
+Hum.WalkSpeed = WALK_SPEED
+end
+if touchMode then
+applyNoclip(false)
+else
+applyNoclip(true)
+end
+end)
+
+--=========================== UI ============================
+local gui = Instance.new("ScreenGui")
+gui.Name = "MM2FarmUI"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 5
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = LP:WaitForChild("PlayerGui")
+
+local main = Instance.new("Frame")
+main.Size = PANEL_SIZE
+main.Position = panelPos
+main.BackgroundColor3 = Color3.fromRGB(26, 28, 34)
+main.BorderSizePixel = 0
+main.Active = true
+main.Visible = false
+main.Parent = gui
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+do
+local s = Instance.new("UIStroke", main)
+s.Color = Color3.fromRGB(58, 62, 72)
+s.Thickness = 1
+end
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 28)
+title.BackgroundColor3 = Color3.fromRGB(34, 37, 44)
+title.BorderSizePixel = 0
+title.Text = ""
+title.Parent = main
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 10)
+
+local caption = Instance.new("TextLabel")
+caption.Size = UDim2.new(1, -110, 1, 0)
+caption.Position = UDim2.new(0, 12, 0, 0)
+caption.BackgroundTransparency = 1
+caption.Font = Enum.Font.GothamBold
+caption.Text = "MM2 · Farm"
+caption.TextSize = 13
+caption.TextColor3 = Color3.fromRGB(238, 240, 246)
+caption.TextXAlignment = Enum.TextXAlignment.Left
+caption.Parent = title
+
+local function titleBtn(glyph, xOffset, color)
+local b = Instance.new("TextButton")
+b.Size = UDim2.new(0, 22, 0, 22)
+b.Position = UDim2.new(1, xOffset, 0.5, -11)
+b.BackgroundColor3 = Color3.fromRGB(48, 51, 60)
+b.Text = glyph
+b.Font = Enum.Font.GothamBold
+b.TextSize = 13
+b.TextColor3 = color
+b.AutoButtonColor = false
+b.Parent = title
+Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+return b
+end
+
+local btnClose = titleBtn("X", -32, Color3.fromRGB(235, 115, 115))
+local btnMin = titleBtn("-", -58, Color3.fromRGB(235, 238, 245))
+
+do -- drag
+local dragging, startInput, startPos
+title.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1
+or input.UserInputType == Enum.UserInputType.Touch then
+dragging = true
+startInput = input.Position
+startPos = main.Position
+input.Changed:Connect(function()
+if input.UserInputState == Enum.UserInputState.End then
+dragging = false
+panelPos = main.Position
+end
+end)
+end
+end)
+UserInputService.InputChanged:Connect(function(input)
+if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+or input.UserInputType == Enum.UserInputType.Touch) then
+local d = input.Position - startInput
+main.Position = UDim2.new(
+startPos.X.Scale, startPos.X.Offset + d.X,
+startPos.Y.Scale, startPos.Y.Offset + d.Y
+)
+end
+end)
+end
+
+local function makeRow(y, text)
+local row = Instance.new("Frame")
+row.Size = UDim2.new(1, -16, 0, 30)
+row.Position = UDim2.new(0, 8, 0, y)
+row.BackgroundTransparency = 1
+row.Parent = main
+
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, -72, 1, 0)
+lbl.BackgroundTransparency = 1
+lbl.Font = Enum.Font.GothamMedium
+lbl.Text = text
+lbl.TextSize = 13
+lbl.TextColor3 = Color3.fromRGB(222, 226, 234)
+lbl.TextXAlignment = Enum.TextXAlignment.Left
+lbl.Parent = row
+
+local btn = Instance.new("TextButton")
+btn.Size = UDim2.new(0, 60, 0, 22)
+btn.Position = UDim2.new(1, -60, 0.5, -11)
+btn.BackgroundColor3 = OFFCOL
+btn.Text = "OFF"
+btn.Font = Enum.Font.GothamBold
+btn.TextSize = 11
+btn.TextColor3 = Color3.fromRGB(200, 205, 214)
+btn.AutoButtonColor = false
+btn.Parent = row
+Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+return btn
+end
+
+local function makeSlider(y, labelText, min, max, default, onChange)
+local wrap = Instance.new("Frame")
+wrap.Size = UDim2.new(1, -16, 0, 34)
+wrap.Position = UDim2.new(0, 8, 0, y)
+wrap.BackgroundTransparency = 1
+wrap.Parent = main
+
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, -54, 0, 14)
+lbl.BackgroundTransparency = 1
+lbl.Font = Enum.Font.GothamMedium
+lbl.Text = labelText
+lbl.TextSize = 12
+lbl.TextColor3 = Color3.fromRGB(222, 226, 234)
+lbl.TextXAlignment = Enum.TextXAlignment.Left
+lbl.Parent = wrap
+
+local val = Instance.new("TextLabel")
+val.Size = UDim2.new(0, 54, 0, 14)
+val.Position = UDim2.new(1, -54, 0, 0)
+val.BackgroundTransparency = 1
+val.Font = Enum.Font.GothamBold
+val.Text = tostring(default)
+val.TextSize = 12
+val.TextColor3 = ACCENT
+val.TextXAlignment = Enum.TextXAlignment.Right
+val.Parent = wrap
+
+local track = Instance.new("Frame")
+track.Size = UDim2.new(1, 0, 0, 6)
+track.Position = UDim2.new(0, 0, 0, 24)
+track.BackgroundColor3 = OFFCOL
+track.BorderSizePixel = 0
+track.Active = true
+track.Parent = wrap
+Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+local fill = Instance.new("Frame")
+fill.Size = UDim2.new(0, 0, 1, 0)
+fill.BackgroundColor3 = ACCENT
+fill.BorderSizePixel = 0
+fill.Parent = track
+Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+local knob = Instance.new("Frame")
+knob.Size = UDim2.new(0, 12, 0, 12)
+knob.AnchorPoint = Vector2.new(0.5, 0.5)
+knob.Position = UDim2.new(0, 0, 0.5, 0)
+knob.BackgroundColor3 = Color3.fromRGB(240, 244, 250)
+knob.BorderSizePixel = 0
+knob.ZIndex = 2
+knob.Parent = track
+Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+local value, dragging = default, false
+
+local function apply(v)
+value = math.clamp(v, min, max)
+local a = (value - min) / (max - min)
+fill.Size = UDim2.new(a, 0, 1, 0)
+knob.Position = UDim2.new(a, 0, 0.5, 0)
+val.Text = tostring(math.floor(value + 0.5))
+onChange(value)
+end
+
+local function fromX(x)
+local rel = (x - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1)
+apply(min + rel * (max - min))
+end
+
+local function startDrag(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1
+or input.UserInputType == Enum.UserInputType.Touch then
+dragging = true
+fromX(input.Position.X)
+end
+end
+
+track.InputBegan:Connect(startDrag)
+knob.InputBegan:Connect(startDrag)
+
+UserInputService.InputChanged:Connect(function(input)
+if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+or input.UserInputType == Enum.UserInputType.Touch) then
+fromX(input.Position.X)
+end
+end)
+UserInputService.InputEnded:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1
+or input.UserInputType == Enum.UserInputType.Touch then
+dragging = false
+end
+end)
+
+apply(default)
+end
+
+local btnFarm = makeRow(36, "Auto Farm")
+local btnAfk = makeRow(68, "Anti AFK")
+
+makeSlider(106, "Speed (studs/s)", 10, 250, State.Speed, function(v) State.Speed = v end)
+makeSlider(144, "Height", -5, 8, State.Hover, function(v) State.Hover = v end)
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -16, 0, 16)
+status.Position = UDim2.new(0, 8, 1, -22)
+status.BackgroundTransparency = 1
+status.Font = Enum.Font.Gotham
+status.Text = "Idle"
+status.TextSize = 11
+status.TextColor3 = Color3.fromRGB(130, 136, 148)
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Parent = main
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 46, 0, 46)
+minBtn.BackgroundColor3 = ACCENT
+minBtn.Text = "M"
+minBtn.Font = Enum.Font.GothamBlack
+minBtn.TextSize = 18
+minBtn.TextColor3 = Color3.fromRGB(12, 22, 14)
+minBtn.AutoButtonColor = false
+minBtn.Visible = false
+minBtn.Parent = gui
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(1, 0)
+do
+local s = Instance.new("UIStroke", minBtn)
+s.Color = Color3.fromRGB(30, 90, 55)
+s.Thickness = 1
+end
+
+local function refresh()
+for key, btn in pairs({ AutoFarm = btnFarm, AntiAFK = btnAfk }) do
+local on = State[key]
+btn.Text = on and "ON" or "OFF"
+btn.BackgroundColor3 = on and ACCENT or OFFCOL
+btn.TextColor3 = on and Color3.fromRGB(12, 22, 14) or Color3.fromRGB(200, 205, 214)
+end
+end
+
+local function setStatus(t)
+status.Text = t
+end
+
+--====================== OPEN ANIMATION =====================
+local function playOpen()
+minBtn.Visible = false
+main.Visible = true
+main.ClipsDescendants = true
+main.BackgroundTransparency = 1
+main.Size = UDim2.new(0, 0, 0, 0)
+main.Position = UDim2.new(panelPos.X.Scale, panelPos.X.Offset,
+panelPos.Y.Scale, panelPos.Y.Offset + 48)
+
+local t = TweenService:Create(main,
+TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+{ Size = PANEL_SIZE, Position = panelPos, BackgroundTransparency = 0 })
+t:Play()
+t.Completed:Connect(function()
+main.ClipsDescendants = false
+end)
+end
+
+--========================= FLYING ==========================
+local function setFlying(on)
+if not Hum or not Root then return end
+if on == flyingNow then return end
+flyingNow = on
+if on then
+Hum.PlatformStand = true
+Root.Anchored = true
+else
+Root.Anchored = false
+Hum.PlatformStand = false
+end
+end
+
+local function prepCoin(coin)
+pcall(function() coin.CanTouch = true end)
+end
+
+local function proneRotation(dir)
+local d = Vector3.new(dir.X, 0, dir.Z)
+if d.Magnitude < 0.001 then d = Vector3.new(0, 0, -1) end
+return CFrame.lookAt(Vector3.zero, Vector3.new(0, -1, 0), d.Unit).Rotation
+end
+
+--========================= FLY TO ==========================
+local function flyTo(coin, timeout)
+timeout = timeout or 12
+local startT = os.clock()
+local arrived = false
+local arrivedAt = nil
+local side = 1
+local lastSwap = 0
+local lastCheck = 0
+
+touchMode = false
+setFlying(true)
+
+local D = Vector3.new(
+coin.Position.X - Root.Position.X, 0,
+coin.Position.Z - Root.Position.Z
+)
+if D.Magnitude < 0.05 then D = Vector3.new(0, 0, -1) end
+D = D.Unit
+
+local flatRot = proneRotation(D)
+
+while State.AutoFarm do
+if not coin or not coin.Parent or not coin:FindFirstChild("TouchInterest") then
+touchMode = false
+return true
+end
+if os.clock() - startT > timeout then
+touchMode = false
+return false
+end
+if not Root or not Hum or Hum.Health <= 0 then
+touchMode = false
+return false
+end
+
+local dt = RunService.Heartbeat:Wait()
+local target = coin.Position + Vector3.new(0, State.Hover, 0)
+local pos = Root.Position
+local dir = target - pos
+local dist = dir.Magnitude
+
+if not arrived then
+if dist <= TOUCH_DIST then
+arrived = true
+arrivedAt = os.clock()
+touchMode = true
+prepCoin(coin)
+setFlying(false)
+Hum.AutoRotate = true
+Hum.WalkSpeed = WALK_SPEED
+Root.CFrame = CFrame.lookAt(target, target + D)
+lastSwap = os.clock()
+Hum:MoveTo(coin.Position + D * PATROL_SPAN)
+else
+local step = math.min(State.Speed * dt, dist)
+Root.CFrame = CFrame.new(pos + dir.Unit * step) * flatRot
+end
+else
+if os.clock() - lastSwap > PATROL_SWAP then
+lastSwap = os.clock()
+side = -side
+Hum:MoveTo(coin.Position + D * (PATROL_SPAN * side))
+end
+
+if os.clock() - lastCheck > 0.5 then
+lastCheck = os.clock()
+local flatNow = Vector3.new(Root.Position.X, 0, Root.Position.Z)
+local flatC = Vector3.new(coin.Position.X, 0, coin.Position.Z)
+if (flatNow - flatC).Magnitude > PATROL_SPAN * 2.5 then
+Root.CFrame = CFrame.new(target) * Root.CFrame.Rotation
+Hum:MoveTo(coin.Position + D * PATROL_SPAN)
+end
+end
+
+if os.clock() - arrivedAt > GIVE_UP then
+touchMode = false
+return false
+end
+end
+end
+
+touchMode = false
+return true
+end
+
+--===================== RESET TO LOBBY ======================
+local function resetToLobby()
+local oldChar = Char
+
+setStatus("Resetting...")
+touchMode = false
+setFlying(false)
+State.AutoFarm = false
+refresh()
+
+if Hum and Hum.Health > 0 then
+Hum.Health = 0
+end
+
+-- give it a moment, then force it if the game didn't kill us
+local t0 = os.clock()
+while Char == oldChar and os.clock() - t0 < 1.5 do
+task.wait(0.1)
+end
+if Char == oldChar and Char and Char.Parent then
+pcall(function() Char:BreakJoints() end)
+end
+
+-- wait for the new character to land in the lobby
+local t1 = os.clock()
+while Char == oldChar and os.clock() - t1 < 6 do
+task.wait(0.1)
+end
+
+setStatus("Idle")
+end
+
+--========================= FARM LOOP =========================
+local farmActive = false
+
+local function startFarm()
+if farmActive then return end
+farmActive = true
+
+task.spawn(function()
+local emptySince = nil
+
+while State.AutoFarm do
+if not Root or not Hum or Hum.Health <= 0 then
+setStatus("Waiting for character...")
+task.wait(0.25)
+continue
+end
+
+if inLobby() then
+setFlying(false)
+setStatus("In Lobby · paused")
+task.wait(0.25)
+continue
+end
+
+local coins, hasContainer = scan()
+
+if #coins == 0 then
+emptySince = emptySince or os.clock()
+
+if os.clock() - emptySince > DONE_WAIT then
+resetToLobby()
+break
+end
+
+setStatus(hasContainer and "Waiting for coins..." or "Finishing up...")
+task.wait(0.3)
+continue
+end
+
+emptySince = nil
+
+table.sort(coins, function(a, b)
+return (a.Position - Root.Position).Magnitude
+< (b.Position - Root.Position).Magnitude
+end)
+
+for i, coin in ipairs(coins) do
+if not State.AutoFarm then break end
+if coin.Parent and coin:FindFirstChild("TouchInterest") then
+setStatus(("Collecting %d / %d"):format(i, #coins))
+flyTo(coin)
+task.wait(0.05)
+end
+end
+end
+
+farmActive = false
+touchMode = false
+setFlying(false)
+setStatus("Idle")
+refresh()
+end)
+end
+
+--========================= HANDLERS ==========================
+btnFarm.MouseButton1Click:Connect(function()
+State.AutoFarm = not State.AutoFarm
+refresh()
+if State.AutoFarm then
+startFarm()
+else
+setStatus("Idle")
+end
+end)
+
+btnAfk.MouseButton1Click:Connect(function()
+State.AntiAFK = not State.AntiAFK
+refresh()
+end)
+
+btnMin.MouseButton1Click:Connect(function()
+panelPos = main.Position
+minBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+minBtn.Position = UDim2.new(panelPos.X.Scale, panelPos.X.Offset + 28,
+panelPos.Y.Scale, panelPos.Y.Offset + 28)
+minBtn.Visible = true
+minBtn.Size = UDim2.new(0, 0, 0, 0)
+TweenService:Create(minBtn,
+TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+{ Size = UDim2.new(0, 46, 0, 46) }):Play()
+main.Visible = false
+end)
+
+minBtn.MouseButton1Click:Connect(function()
+panelPos = UDim2.new(minBtn.Position.X.Scale, minBtn.Position.X.Offset - 28,
+minBtn.Position.Y.Scale, minBtn.Position.Y.Offset - 28)
+playOpen()
+end)
+
+btnClose.MouseButton1Click:Connect(function()
+gui.Enabled = false
+end)
+
+--======================== ANTI-AFK ===========================
+LP.Idled:Connect(function()
+if State.AntiAFK then
+VirtualUser:CaptureController()
+VirtualUser:ClickButton2(Vector2.new())
+end
+end)
+
+refresh()
+setStatus("Idle")
+task.delay(2.8, playOpen)
+
+
+
+
