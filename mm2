@@ -18,7 +18,7 @@ local WALK_SPEED = 25
 local PATROL_SPAN = 3 -- studs either side of the coin
 local PATROL_SWAP = 0.45 -- how often to turn around
 local GIVE_UP = 4 -- seconds on a coin before moving on
-local DONE_WAIT = 2.5 -- seconds of no coins before resetting
+local DONE_WAIT = 30 -- seconds of no coins before resetting
 
 local State = { AutoFarm = false, AntiAFK = false, Speed = 25, Hover = 0 }
 
